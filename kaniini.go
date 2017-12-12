@@ -6,10 +6,10 @@ import (
 	"github.com/streadway/amqp"
 )
 
-type Consumer interface {
-	Chan() <-chan *Delivery
+type Queue interface {
+	Receive() <-chan *Delivery
 	Done() chan struct{}
-	Emit([]byte) error
+	Send([]byte) error
 }
 
 type Delivery struct {
@@ -21,7 +21,7 @@ func (d *Delivery) Ack() {
 	d.amqpDelivery.Ack(true)
 }
 
-type consumer struct {
+type queue struct {
 	conn       *amqp.Connection
 	channel    *amqp.Channel
 	Deliveries <-chan *Delivery
@@ -47,8 +47,8 @@ func mapDelivery(amqpDelivery <-chan amqp.Delivery) chan *Delivery {
 	return deliveries
 }
 
-func NewConsumer(uri string, name string) (Consumer, error) {
-	consumer := &consumer{
+func NewQueue(uri string, name string) (Queue, error) {
+	consumer := &queue{
 		name: name,
 		uri:  uri,
 		done: make(chan struct{}),
@@ -81,32 +81,32 @@ func NewConsumer(uri string, name string) (Consumer, error) {
 	return consumer, nil
 }
 
-func (c *consumer) closeRoutine() {
+func (q *queue) closeRoutine() {
 	go func() {
 		for {
 			select {
-			case <-c.done:
+			case <-q.done:
 				fmt.Println("Closing connections")
-				c.stop()
-				c.done <- struct{}{}
+				q.stop()
+				q.done <- struct{}{}
 				return
 			}
 		}
 	}()
 }
 
-func (c *consumer) stop() error {
-	err := c.channel.Close()
+func (q *queue) stop() error {
+	err := q.channel.Close()
 	if err != nil {
 		return err
 	}
 
-	return c.conn.Close()
+	return q.conn.Close()
 }
 
-func (c *consumer) declare() error {
+func (q *queue) declare() error {
 	// Connect to RabbitMQ
-	conn, err := amqp.Dial(c.uri)
+	conn, err := amqp.Dial(q.uri)
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func (c *consumer) declare() error {
 
 	// Declare exchange
 	err = channel.ExchangeDeclare(
-		c.name,
+		q.name,
 		"direct",
 		true,
 		false,
@@ -130,8 +130,8 @@ func (c *consumer) declare() error {
 	}
 
 	// Declare and bind queue
-	queue, err := channel.QueueDeclare(
-		c.name,
+	que, err := channel.QueueDeclare(
+		q.name,
 		true,
 		false,
 		false,
@@ -139,31 +139,31 @@ func (c *consumer) declare() error {
 		nil)
 
 	err = channel.QueueBind(
-		queue.Name,
+		que.Name,
 		"",
-		c.name,
+		q.name,
 		false,
 		nil)
 	if err != nil {
 		return err
 	}
 
-	c.conn = conn
-	c.channel = channel
+	q.conn = conn
+	q.channel = channel
 
 	return nil
 }
 
-func (c *consumer) Chan() <-chan *Delivery {
-	return c.Deliveries
+func (q *queue) Receive() <-chan *Delivery {
+	return q.Deliveries
 }
 
-func (c *consumer) Done() chan struct{} {
-	return c.done
+func (q *queue) Done() chan struct{} {
+	return q.done
 }
 
-func (c *consumer) Emit(msg []byte) error {
-	return c.channel.Publish(c.name, "", false, false, amqp.Publishing{
+func (q *queue) Send(msg []byte) error {
+	return q.channel.Publish(q.name, "", false, false, amqp.Publishing{
 		ContentType: "text/plain",
 		Body:        msg,
 	})
