@@ -15,13 +15,13 @@ easy use cases not involving routing logic.
     )
 
     func main() {
-        consumer, _ := kaniini.NewConsumer(
+        queue, _ := kaniini.NewQueue(
             "amqp://guest:guest@localhost:5672",
             "kaniini")
 
-        _ = consumer.Emit([]byte("test message"))
+        _ = queue.Send([]byte("test message"))
         select {
-        case msg := <-consumer.Chan():
+        case msg := <-queue.Receive():
             defer msg.Ack()
             fmt.Println(string(msg.Body))
         }
