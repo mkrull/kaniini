@@ -33,7 +33,8 @@ func TestInMemoryReceiving(t *testing.T) {
 	timer := time.NewTimer(time.Second * 1)
 
 	select {
-	case msg := <-q.Receive():
+	case message := <-q.Receive():
+		msg, _ := message.(*delivery)
 		assert.Equal(expected, msg.Body, "Receiving expected message")
 	case <-timer.C:
 		t.Errorf("Timeout while consuming messages.")

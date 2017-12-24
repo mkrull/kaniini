@@ -33,8 +33,9 @@ func TestMain(m *testing.M) {
 	timer := time.NewTimer(time.Second * 1)
 
 	select {
-	case msg := <-consumer.Receive():
-		msg.Ack()
+	case message := <-consumer.Receive():
+		message.Ack()
+		msg, _ := message.(*delivery)
 		consumer.Done() <- struct{}{}
 		fmt.Printf("Got: %s", string(msg.Body))
 		if string(msg.Body) != expected {

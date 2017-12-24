@@ -7,36 +7,50 @@ import (
 )
 
 type Queue interface {
-	Receive() <-chan *Delivery
+	Receive() <-chan Delivery
 	Done() chan struct{}
 	Send([]byte) error
 }
 
-type Delivery struct {
+type Delivery interface {
+	Unmarshal([]byte) error
+	Ack() error
+	Error() error
+}
+
+type delivery struct {
 	amqpDelivery amqp.Delivery
 	Body         []byte
 }
 
-func (d *Delivery) Ack() {
-	d.amqpDelivery.Ack(true)
+func (d *delivery) Ack() error {
+	return d.amqpDelivery.Ack(true)
+}
+
+func (d *delivery) Error() error {
+	return nil
+}
+
+func (d *delivery) Unmarshal([]byte) error {
+	return nil
 }
 
 type queue struct {
 	conn       *amqp.Connection
 	channel    *amqp.Channel
-	Deliveries <-chan *Delivery
+	Deliveries <-chan Delivery
 	done       chan struct{}
 	uri        string
 	name       string
 }
 
-func mapDelivery(amqpDelivery <-chan amqp.Delivery) chan *Delivery {
-	deliveries := make(chan *Delivery)
+func mapDelivery(amqpDelivery <-chan amqp.Delivery) chan Delivery {
+	deliveries := make(chan Delivery)
 	go func() {
 		for {
 			select {
 			case msg := <-amqpDelivery:
-				deliveries <- &Delivery{
+				deliveries <- &delivery{
 					Body:         msg.Body,
 					amqpDelivery: msg,
 				}
@@ -154,7 +168,7 @@ func (q *queue) declare() error {
 	return nil
 }
 
-func (q *queue) Receive() <-chan *Delivery {
+func (q *queue) Receive() <-chan Delivery {
 	return q.Deliveries
 }
 
