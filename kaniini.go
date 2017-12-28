@@ -1,6 +1,7 @@
 package kaniini
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/streadway/amqp"
@@ -16,6 +17,7 @@ type Delivery interface {
 	Unmarshal([]byte) error
 	Ack() error
 	Error() error
+	SaveRaw(interface{}) error
 }
 
 type delivery struct {
@@ -31,8 +33,21 @@ func (d *delivery) Error() error {
 	return nil
 }
 
-func (d *delivery) Unmarshal([]byte) error {
+func (d *delivery) Unmarshal(data []byte) error {
+	d.Body = data
+
 	return nil
+}
+
+func (d *delivery) SaveRaw(raw interface{}) error {
+	amqpDelivery, ok := raw.(amqp.Delivery)
+
+	if ok {
+		d.amqpDelivery = amqpDelivery
+		return nil
+	} else {
+		return errors.New("Raw message is no amqp.Delivery")
+	}
 }
 
 type queue struct {
@@ -47,14 +62,11 @@ type queue struct {
 func mapDelivery(amqpDelivery <-chan amqp.Delivery) chan Delivery {
 	deliveries := make(chan Delivery)
 	go func() {
-		for {
-			select {
-			case msg := <-amqpDelivery:
-				deliveries <- &delivery{
-					Body:         msg.Body,
-					amqpDelivery: msg,
-				}
-			}
+		for msg := range amqpDelivery {
+			d := &delivery{}
+			d.Unmarshal(msg.Body)
+			d.SaveRaw(msg)
+			deliveries <- d
 		}
 	}()
 

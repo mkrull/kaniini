@@ -9,6 +9,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestQueueConstruction(t *testing.T) {
@@ -19,6 +21,12 @@ func TestQueueConstruction(t *testing.T) {
 	if err != nil {
 		t.Errorf("Could not create consumer: %s", err)
 	}
+}
+
+func TestSaveRawWrongType(t *testing.T) {
+	d := &delivery{}
+	err := d.SaveRaw("A string is no amqp.Delivery")
+	assert.NotNil(t, err, "Wrong type passed to SaveRaw should cause an error")
 }
 
 func TestMain(m *testing.M) {
