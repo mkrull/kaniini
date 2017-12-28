@@ -59,16 +59,18 @@ type queue struct {
 	name       string
 }
 
-func mapDelivery(amqpDelivery <-chan amqp.Delivery) chan Delivery {
+func mapFunc(amqpDelivery <-chan amqp.Delivery, deliveries chan Delivery) {
+	for msg := range amqpDelivery {
+		d := &delivery{}
+		d.Unmarshal(msg.Body)
+		d.SaveRaw(msg)
+		deliveries <- d
+	}
+}
+
+func mapDelivery(amqpDelivery <-chan amqp.Delivery, mapFunc func(<-chan amqp.Delivery, chan Delivery)) chan Delivery {
 	deliveries := make(chan Delivery)
-	go func() {
-		for msg := range amqpDelivery {
-			d := &delivery{}
-			d.Unmarshal(msg.Body)
-			d.SaveRaw(msg)
-			deliveries <- d
-		}
-	}()
+	go mapFunc(amqpDelivery, deliveries)
 
 	return deliveries
 }
@@ -99,7 +101,7 @@ func NewQueue(uri string, name string) (Queue, error) {
 		return nil, err
 	}
 
-	consumer.Deliveries = mapDelivery(del)
+	consumer.Deliveries = mapDelivery(del, mapFunc)
 
 	// Close when done
 	consumer.closeRoutine()
