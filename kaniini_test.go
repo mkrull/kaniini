@@ -24,9 +24,14 @@ func TestQueueConstruction(t *testing.T) {
 func TestMain(m *testing.M) {
 	expected := "test message"
 
-	consumer, _ := NewQueue(
+	consumer, err := NewQueue(
 		"amqp://guest:guest@localhost:5672",
 		"test-integration")
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
 	_ = consumer.Send([]byte("test message"))
 
