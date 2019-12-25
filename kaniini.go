@@ -6,6 +6,26 @@ import (
 	"github.com/streadway/amqp"
 )
 
+type Exchange int
+
+const (
+	None  Exchange = iota
+	Direct
+	Topic
+	Fanout
+	Headers
+)
+
+func (e Exchange) String() string {
+	return []string{
+		"",
+		"direct",
+		"topic",
+		"fanout",
+		"headers",
+	}[e]
+}
+
 type Queue interface {
 	Receive() <-chan *Delivery
 	Done() chan struct{}
@@ -22,12 +42,14 @@ func (d *Delivery) Ack() {
 }
 
 type queue struct {
-	conn       *amqp.Connection
-	channel    *amqp.Channel
-	Deliveries <-chan *Delivery
-	done       chan struct{}
-	uri        string
-	name       string
+	conn         *amqp.Connection
+	channel      *amqp.Channel
+	Deliveries   <-chan *Delivery
+	done         chan struct{}
+	uri          string
+	name         string
+	exchangeName string
+	exchangeType Exchange
 }
 
 func mapDelivery(amqpDelivery <-chan amqp.Delivery) chan *Delivery {
@@ -48,20 +70,45 @@ func mapDelivery(amqpDelivery <-chan amqp.Delivery) chan *Delivery {
 }
 
 func NewQueue(uri string, name string) (Queue, error) {
-	consumer := &queue{
+	q := &queue{
 		name: name,
 		uri:  uri,
 		done: make(chan struct{}),
 	}
 
-	err := consumer.declare()
+	return newQueue(q)
+}
+
+func NewQueueOnExchange(uri string, name string, exchange string, exchangeT Exchange) (Queue, error) {
+	q := &queue{
+		name: name,
+		uri:  uri,
+		done: make(chan struct{}),
+		exchangeName: exchange,
+		exchangeType: exchangeT,
+	}
+
+	return newQueue(q)
+}
+
+func newQueue(q *queue) (Queue, error) {
+	// set default exchange config
+	if q.exchangeName == "" {
+		q.exchangeName = q.name
+	}
+
+	if q.exchangeType == None {
+		q.exchangeType = Direct
+	}
+
+	err := q.declare()
 	if err != nil {
 		return nil, err
 	}
 
 	// Start consuming
-	del, err := consumer.channel.Consume(
-		consumer.name,
+	del, err := q.channel.Consume(
+		q.name,
 		"consumer_tag",
 		false,
 		false,
@@ -73,12 +120,12 @@ func NewQueue(uri string, name string) (Queue, error) {
 		return nil, err
 	}
 
-	consumer.Deliveries = mapDelivery(del)
+	q.Deliveries = mapDelivery(del)
 
 	// Close when done
-	consumer.closeRoutine()
+	q.closeRoutine()
 
-	return consumer, nil
+	return q, nil
 }
 
 func (q *queue) closeRoutine() {
@@ -118,8 +165,8 @@ func (q *queue) declare() error {
 
 	// Declare exchange
 	err = channel.ExchangeDeclare(
-		q.name,
-		"direct",
+		q.exchangeName,
+		q.exchangeType.String(),
 		true,
 		false,
 		false,
@@ -141,7 +188,7 @@ func (q *queue) declare() error {
 	err = channel.QueueBind(
 		que.Name,
 		"",
-		q.name,
+		q.exchangeName,
 		false,
 		nil)
 	if err != nil {
